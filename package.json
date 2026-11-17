@@ -1,4 +1,11 @@
 {
+  "name": "unimeet-marketing-root",
+  "version": "1.0.0",
+  "description": "UniMeet Marketing Automation Pipeline",
+  "scripts": {
+    "build": "cd backend && npm install",
+    "start": "cd backend && npm start"
+  },
   "dependencies": {
     "@supabase/server": "^1.9.2"
   }
