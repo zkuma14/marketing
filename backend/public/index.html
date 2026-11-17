@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UNIMEET Studio — Instagram & YouTube Creator</title>
+    <!-- Google Fonts: Pretendard / Inter -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-white text-gray-900 antialiased selection-black">
+
+    <!-- [인스타그램 AppBar UX] 상단 네비게이션 헤더 -->
+    <header class="sticky top-0 z-40 bg-white border-b border-gray-100 hairline-border">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <!-- 좌측: Heavy Header 로고 -->
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl font-black tracking-tighter text-black brand-logo">UNIMEET</span>
+                <span class="circle-badge text-xs font-bold">Studio</span>
+                <span class="hidden md:inline-block text-xs font-medium text-gray-400 pl-2 border-l border-gray-200">Achromatic Creator Pipeline</span>
+            </div>
+
+            <!-- 중앙: 인디케이터 (현재 스텝) -->
+            <div class="hidden lg:flex items-center space-x-6 text-xs font-semibold tracking-tight text-gray-400">
+                <span id="navStep1" class="text-black font-extrabold flex items-center"><span class="step-num-active mr-1.5">1</span>선택</span>
+                <i class="fa-solid fa-chevron-right text-gray-200 text-3xs"></i>
+                <span id="navStep2" class="flex items-center"><span class="step-num mr-1.5">2</span>기획</span>
+                <i class="fa-solid fa-chevron-right text-gray-200 text-3xs"></i>
+                <span id="navStep3" class="flex items-center"><span class="step-num mr-1.5">3</span>미리보기</span>
+                <i class="fa-solid fa-chevron-right text-gray-200 text-3xs"></i>
+                <span id="navStep4" class="flex items-center"><span class="step-num mr-1.5">4</span>편집</span>
+                <i class="fa-solid fa-chevron-right text-gray-200 text-3xs"></i>
+                <span id="navStep5" class="flex items-center"><span class="step-num mr-1.5">5</span>제작</span>
+                <i class="fa-solid fa-chevron-right text-gray-200 text-3xs"></i>
+                <span id="navStep6" class="flex items-center"><span class="step-num mr-1.5">6</span>게시</span>
+            </div>
+
+            <!-- [인스타그램 UX 메타포] 상단 우측 액션: 완료 / 게시 버튼 -->
+            <div class="flex items-center space-x-2">
+                <button id="btnTopPublish" onclick="triggerPublishAction()" disabled class="btn-pure-black px-4 py-2 text-xs font-bold rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1.5 shadow-sm">
+                    <i class="fa-solid fa-paper-plane text-2xs"></i>
+                    <span>게시하기</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 컨테이너 (2열 레이아웃: 좌측 컨트롤 / 우측 인스타그램 모바일 목업) -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- 좌측 워크플로우 컨트롤 영역 -->
+            <div class="lg:col-span-7 space-y-6">
+
+                <!-- [STEP 1] 포맷 선택 -->
+                <section class="card-hairline p-6 rounded-2xl bg-white space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="circle-badge-num">1</span>
+                            <h2 class="text-base font-extrabold tracking-tight text-black">콘텐츠 포맷 선택</h2>
+                        </div>
+                        <span class="text-xs text-gray-400 font-medium">STEP 1</span>
+                    </div>
+                    
+                    <p class="text-xs text-gray-500 font-normal">발행 목적에 맞는 인스타그램 카드뉴스 또는 숏폼/릴스 포맷을 선택하세요.</p>
+
+                    <div class="grid grid-cols-2 gap-3 pt-1">
+                        <label class="format-option active cursor-pointer border rounded-xl p-4 flex flex-col justify-between transition" id="labelPost">
+                            <input type="radio" name="contentType" value="post" checked class="hidden" onchange="onFormatChange('post')">
+                            <div class="flex items-center justify-between w-full">
+                                <span class="text-xs font-bold text-black uppercase tracking-wider">Feed Carousel</span>
+                                <i class="fa-regular fa-clone text-black text-sm"></i>
+                            </div>
+                            <div class="mt-4">
+                                <p class="text-sm font-black tracking-tight text-black">게시글 (카드뉴스)</p>
+                                <p class="text-2xs text-gray-400 mt-0.5">1:1 정방형 5장 슬라이드</p>
+                            </div>
+                        </label>
+
+                        <label class="format-option cursor-pointer border rounded-xl p-4 flex flex-col justify-between transition" id="labelVideo">
+                            <input type="radio" name="contentType" value="video" class="hidden" onchange="onFormatChange('video')">
+                            <div class="flex items-center justify-between w-full">
+                                <span class="text-xs font-bold text-black uppercase tracking-wider">Shorts / Reels</span>
+                                <i class="fa-solid fa-play text-black text-sm"></i>
+                            </div>
+                            <div class="mt-4">
+                                <p class="text-sm font-black tracking-tight text-black">영상 (쇼츠 &amp; 릴스)</p>
+                                <p class="text-2xs text-gray-400 mt-0.5">9:16 세로 숏폼 자막/대본</p>
+                            </div>
+                        </label>
+                    </div>
+                </section>
+
+                <!-- [STEP 2] 주제 내용 입력 및 AI 생성 -->
+                <section class="card-hairline p-6 rounded-2xl bg-white space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="circle-badge-num">2</span>
+                            <h2 class="text-base font-extrabold tracking-tight text-black">내용 주제 기획</h2>
+                        </div>
+                        <span class="text-xs text-gray-400 font-medium">STEP 2</span>
+                    </div>
+
+                    <p class="text-xs text-gray-500 font-normal">대학생들이 즉각 공감하고 댓글을 남길 수 있는 핵심 주제를 입력합니다.</p>
+
+                    <div class="space-y-3">
+                        <div class="relative">
+                            <input type="text" id="topicInput" value="연애 밸런스 게임" placeholder="예: 연애 밸런스 게임, 캠퍼스 미팅 꿀팁" 
+                                class="input-hairline w-full px-4 py-3.5 text-sm font-semibold text-black bg-white rounded-xl focus:outline-none">
+                            <div class="absolute right-3 top-3.5 text-xs text-gray-400 font-mono">Topic</div>
+                        </div>
+
+                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                            <span class="text-xs font-bold text-gray-700">톤앤매너 스타일</span>
+                            <select id="toneSelect" class="bg-transparent text-xs font-bold text-black focus:outline-none cursor-pointer">
+                                <option value="mz">MZ 트렌디 반말 (대학생 맞춤)</option>
+                                <option value="humor">유머 / 킹받는 드립</option>
+                                <option value="spicy">매운맛 솔직 팩트폭행</option>
+                                <option value="kind">친절하고 단정한 설명</option>
+                            </select>
+                        </div>
+
+                        <button id="btnGenerateDraft" onclick="generateDraft()" class="w-full btn-pure-black py-3.5 px-6 rounded-xl font-bold text-sm tracking-tight flex items-center justify-center space-x-2 transition shadow-sm">
+                            <i class="fa-solid fa-sparkles text-xs"></i>
+                            <span>내용 생성하기 (STEP 3 텍스트 미리보기 실행)</span>
+                        </button>
+                    </div>
+                </section>
+
+                <!-- [STEP 4] 내용 수정 및 Fix -->
+                <section class="card-hairline p-6 rounded-2xl bg-white space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="circle-badge-num">4</span>
+                            <h2 class="text-base font-extrabold tracking-tight text-black">내용 검토 및 Fix(확정)</h2>
+                        </div>
+                        <span id="badgeDraftStatus" class="tag-status">대기</span>
+                    </div>
+
+                    <p class="text-xs text-gray-500 font-normal">생성된 대본과 선택지 문구를 편집하거나, 확정(Fix)하여 미디어 렌더링 단계로 이동합니다.</p>
+
+                    <div class="p-4 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-bold text-black" id="editorSummaryText">대본 데이터가 생성되면 이곳에서 바로 편집할 수 있습니다.</p>
+                            <p class="text-2xs text-gray-400 mt-0.5">인스타그램 바텀 시트 메타포 편집기</p>
+                        </div>
+                        <button id="btnOpenBottomSheet" onclick="openBottomSheet()" disabled class="px-3 py-1.5 bg-white border border-gray-200 text-black text-xs font-bold rounded-lg hover:bg-gray-100 disabled:opacity-40 transition">
+                            <i class="fa-solid fa-sliders mr-1 text-2xs"></i> 편집하기
+                        </button>
+                    </div>
+
+                    <div class="flex space-x-3 pt-1">
+                        <button id="btnFix" onclick="fixDraft()" disabled class="w-full btn-pure-black py-3 px-4 rounded-xl text-xs font-bold tracking-tight disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center justify-center space-x-1.5">
+                            <i class="fa-solid fa-check text-xs"></i>
+                            <span>내용 최종 확정 (Fix 하기)</span>
+                        </button>
+                    </div>
+                </section>
+
+                <!-- [STEP 5] 게시글 / 영상 생성 버튼 누르기 -->
+                <section class="card-hairline p-6 rounded-2xl bg-white space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="circle-badge-num">5</span>
+                            <h2 class="text-base font-extrabold tracking-tight text-black">게시글 / 영상 생성 버튼 누르기</h2>
+                        </div>
+                        <span class="text-xs text-gray-400 font-medium">STEP 5</span>
+                    </div>
+
+                    <p class="text-xs text-gray-500 font-normal">확정된 타이포그래피와 헤어라인 프레임을 결합하여 1080x1080 카드뉴스 PNG 또는 숏폼 미디어를 렌더링합니다.</p>
+
+                    <button id="btnGenerateMedia" onclick="generateMedia()" disabled class="w-full btn-pure-black py-3.5 px-6 rounded-xl font-bold text-sm tracking-tight flex items-center justify-center space-x-2 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-sm">
+                        <i class="fa-solid fa-layer-group text-xs"></i>
+                        <span>게시글 / 영상 생성 버튼 누르기 (Media Render)</span>
+                    </button>
+                </section>
+
+                <!-- [STEP 6] SNS 게시하기 -->
+                <section class="card-hairline p-6 rounded-2xl bg-white space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="circle-badge-num">6</span>
+                            <h2 class="text-base font-extrabold tracking-tight text-black">인스타그램 · 유튜브에 게시하기</h2>
+                        </div>
+                        <span class="text-xs text-gray-400 font-medium">STEP 6</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="cursor-pointer border border-gray-200 p-3.5 rounded-xl flex items-center justify-between bg-white hover:bg-gray-50 transition">
+                            <div class="flex items-center space-x-2.5">
+                                <i class="fa-brands fa-instagram text-black text-base"></i>
+                                <span class="text-xs font-bold text-black">인스타그램</span>
+                            </div>
+                            <input type="checkbox" id="chkInstagram" checked class="form-checkbox text-black rounded border-gray-300">
+                        </label>
+                        <label class="cursor-pointer border border-gray-200 p-3.5 rounded-xl flex items-center justify-between bg-white hover:bg-gray-50 transition">
+                            <div class="flex items-center space-x-2.5">
+                                <i class="fa-brands fa-youtube text-black text-base"></i>
+                                <span class="text-xs font-bold text-black">유튜브 쇼츠</span>
+                            </div>
+                            <input type="checkbox" id="chkYoutube" checked class="form-checkbox text-black rounded border-gray-300">
+                        </label>
+                    </div>
+
+                    <div class="flex items-center space-x-6 text-xs text-gray-600 pt-1">
+                        <label class="flex items-center space-x-2 cursor-pointer font-medium">
+                            <input type="radio" name="timing" value="instant" checked class="text-black">
+                            <span>즉시 게시</span>
+                        </label>
+                        <label class="flex items-center space-x-2 cursor-pointer font-medium">
+                            <input type="radio" name="timing" value="schedule" class="text-black">
+                            <span>예약 게시</span>
+                        </label>
+                    </div>
+
+                    <button id="btnPublish" onclick="publishContent()" disabled class="w-full btn-pure-black py-3.5 px-6 rounded-xl font-bold text-sm tracking-tight flex items-center justify-center space-x-2 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-sm">
+                        <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                        <span>SNS에 최종 게시하기 (Publish)</span>
+                    </button>
+                </section>
+
+            </div>
+
+            <!-- 우측 인스타그램 모바일 목업 -->
+            <div class="lg:col-span-5 sticky top-24 space-y-6">
+
+                <!-- [STEP 3] 텍스트 미리보기 -->
+                <div class="card-hairline p-5 rounded-2xl bg-white space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-regular fa-file-lines text-black text-xs"></i>
+                            <h3 class="text-xs font-extrabold uppercase tracking-wider text-black">STEP 3. 텍스트 미리보기</h3>
+                        </div>
+                        <span id="draftIdDisplay" class="text-3xs font-mono text-gray-400">NO DRAFT</span>
+                    </div>
+
+                    <div class="relative">
+                        <textarea id="previewTextViewer" readonly rows="8" 
+                            class="w-full bg-gray-50 border border-gray-100 rounded-xl p-3.5 text-xs font-mono text-gray-700 focus:outline-none resize-none leading-relaxed" 
+                            placeholder="STEP 2에서 내용을 생성하면 이곳에 에디토리얼 텍스트 초안이 출력됩니다."></textarea>
+                    </div>
+                </div>
+
+                <!-- 인스타그램 실제 모바일 앱 피드 뷰어 -->
+                <div class="card-hairline rounded-3xl bg-white overflow-hidden shadow-sm border border-gray-200">
+                    <div class="px-4 py-3 flex items-center justify-between border-b border-gray-100">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-xs font-black">
+                                U
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold text-black tracking-tight flex items-center">
+                                    unimeet.official
+                                    <i class="fa-solid fa-circle-check text-black ml-1 text-2xs"></i>
+                                </p>
+                                <p class="text-3xs text-gray-400">University Match &amp; Social</p>
+                            </div>
+                        </div>
+                        <button class="text-gray-400 hover:text-black">
+                            <i class="fa-solid fa-ellipsis"></i>
+                        </button>
+                    </div>
+
+                    <!-- 1:1 정방형 슬라이드 미디어 캔버스 -->
+                    <div class="relative bg-gray-50 w-full aspect-square flex items-center justify-center overflow-hidden border-b border-gray-100" id="instagramCanvas">
+                        <div id="canvasPlaceholder" class="text-center p-6 space-y-2">
+                            <div class="w-12 h-12 mx-auto rounded-full border border-gray-200 flex items-center justify-center text-gray-400 text-lg">
+                                <i class="fa-regular fa-image"></i>
+                            </div>
+                            <p class="text-xs font-bold text-black">미디어 렌더링 대기 중</p>
+                            <p class="text-3xs text-gray-400">STEP 5 생성 버튼을 누르면 인스타그램 규격 1080x1080 실물이 여기에 표시됩니다.</p>
+                        </div>
+
+                        <img id="renderedSlideImg" src="" alt="Slide Preview" class="hidden w-full h-full object-cover">
+
+                        <button id="btnPrevSlide" onclick="prevSlide()" class="hidden absolute left-3 top-1/2 transform -translate-y-1/2 w-8 h-8 rounded-full bg-white bg-opacity-90 border border-gray-200 text-black flex items-center justify-center shadow-sm">
+                            <i class="fa-solid fa-chevron-left text-2xs"></i>
+                        </button>
+                        <button id="btnNextSlide" onclick="nextSlide()" class="hidden absolute right-3 top-1/2 transform -translate-y-1/2 w-8 h-8 rounded-full bg-white bg-opacity-90 border border-gray-200 text-black flex items-center justify-center shadow-sm">
+                            <i class="fa-solid fa-chevron-right text-2xs"></i>
+                        </button>
+
+                        <span id="slideCounterBadge" class="hidden absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black bg-opacity-70 text-white text-3xs font-bold">1 / 5</span>
+                    </div>
+
+                    <!-- 인스타그램 인터랙션 아이콘 바 -->
+                    <div class="px-4 py-3 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-4 text-black text-lg">
+                                <button class="hover:text-gray-600 transition"><i class="fa-regular fa-heart"></i></button>
+                                <button class="hover:text-gray-600 transition"><i class="fa-regular fa-comment"></i></button>
+                                <button class="hover:text-gray-600 transition"><i class="fa-regular fa-paper-plane"></i></button>
+                            </div>
+                            <div id="carouselDots" class="flex items-center space-x-1"></div>
+                            <button class="text-black text-lg hover:text-gray-600 transition"><i class="fa-regular fa-bookmark"></i></button>
+                        </div>
+
+                        <div class="pt-1">
+                            <p class="text-xs text-black font-bold">좋아요 1,248개</p>
+                            <p class="text-xs text-gray-800 mt-1 leading-snug line-clamp-3" id="mockCaptionText">
+                                <span class="font-bold text-black mr-1">unimeet.official</span>
+                                <span class="text-gray-400">내용이 생성되면 캡션 본문이 이곳에 표시됩니다.</span>
+                            </p>
+                            <p class="text-3xs text-gray-400 uppercase mt-1">방금 전</p>
+                        </div>
+                    </div>
+
+                    <!-- SNS 최종 게시 완료 알림 바 -->
+                    <div id="publishNotificationBar" class="hidden border-t border-gray-100 p-4 bg-gray-50 space-y-2">
+                        <div class="flex items-center space-x-2 text-xs font-bold text-black">
+                            <i class="fa-solid fa-circle-check"></i>
+                            <span>인스타그램 및 유튜브 게시 성공</span>
+                        </div>
+                        <div id="publishLinksArea" class="text-xs space-y-1 text-gray-600"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- 바텀 시트 편집 모달 -->
+    <div id="bottomSheetBackdrop" class="fixed inset-0 bg-black bg-opacity-40 z-50 hidden transition-opacity" onclick="closeBottomSheet()"></div>
+    <div id="bottomSheet" class="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto bg-white rounded-t-3xl shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out border-t border-gray-200 max-h-5/6 flex flex-col">
+        <div class="w-full pt-3 pb-2 flex justify-center cursor-pointer" onclick="closeBottomSheet()">
+            <div class="w-12 h-1.5 bg-gray-200 rounded-full"></div>
+        </div>
+
+        <div class="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h3 class="text-sm font-black tracking-tight text-black flex items-center">
+                <i class="fa-solid fa-pen-nib mr-2 text-xs"></i> 콘텐츠 세부 텍스트 편집
+            </h3>
+            <button onclick="closeBottomSheet()" class="text-gray-400 hover:text-black">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div id="bottomSheetFormArea" class="p-6 overflow-y-auto space-y-4 flex-1"></div>
+
+        <div class="p-4 border-t border-gray-100 bg-gray-50 flex space-x-3">
+            <button onclick="closeBottomSheet()" class="flex-1 py-2.5 px-4 bg-white border border-gray-200 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-100 transition">
+                취소
+            </button>
+            <button onclick="saveBottomSheetChanges()" class="flex-1 py-2.5 px-4 btn-pure-black text-xs font-bold rounded-xl transition shadow-sm">
+                수정 완료 및 저장
+            </button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
