@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "UniMeet Marketing Automation Pipeline",
   "scripts": {
-    "build": "cd backend && npm install",
+    "build": "cd backend && npm install --include=optional",
     "start": "cd backend && npm start"
   },
   "dependencies": {
