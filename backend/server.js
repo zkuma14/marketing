@@ -1,5 +1,33 @@
 require('dotenv').config();
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+// [Linux / Render Fontconfig 설정] 한글 폰트(Pretendard/NanumGothic) 자동 등록
+const fontsDir = path.join(__dirname, 'fonts');
+process.env.FONTCONFIG_PATH = fontsDir;
+
+// Linux 환경에서 ~/.fonts 디렉토리 자동 동기화 (Render 배포 환경 대비)
+if (process.platform === 'linux') {
+    try {
+        const userFontsDir = path.join(os.homedir(), '.fonts');
+        if (!fs.existsSync(userFontsDir)) {
+            fs.mkdirSync(userFontsDir, { recursive: true });
+        }
+        if (fs.existsSync(fontsDir)) {
+            const fontFiles = fs.readdirSync(fontsDir);
+            for (const file of fontFiles) {
+                if (file.endsWith('.ttf') || file.endsWith('.otf')) {
+                    fs.copyFileSync(path.join(fontsDir, file), path.join(userFontsDir, file));
+                }
+            }
+            console.log(`[Fontconfig] ✅ Linux ~/.fonts 에 한글 폰트 동기화 완료: ${fontFiles.join(', ')}`);
+        }
+    } catch (e) {
+        console.warn('[Fontconfig Notice] Failed to copy fonts to ~/.fonts:', e.message);
+    }
+}
+
 const express = require('express');
 const cors = require('cors');
 const apiRoutes = require('./routes/api');
