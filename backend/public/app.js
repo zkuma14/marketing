@@ -3,14 +3,10 @@
  * Instagram Achromatic Minimalist UX Engine
  */
 
-// 백엔드 API 호스트 자동 감지 (로컬 포트 3000 또는 외부 5500 대응)
-const API_BASE = (window.location.port === '3000') 
-    ? '/api' 
-    : 'http://localhost:3000/api';
-
-const ASSET_BASE = (window.location.port === '3000') 
-    ? '' 
-    : 'http://localhost:3000';
+// 백엔드 API 호스트 자동 감지 (Render 상용 배포 및 로컬 대응)
+const isLocalSeparateDev = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '5500';
+const API_BASE = isLocalSeparateDev ? 'http://localhost:3000/api' : '/api';
+const ASSET_BASE = isLocalSeparateDev ? 'http://localhost:3000' : '';
 
 let currentDraftId = null;
 let currentDraftData = null;
