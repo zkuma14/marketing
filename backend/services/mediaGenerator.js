@@ -1,10 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const opentype = require('opentype.js');
 
 /**
  * 무채색(Achromatic) & 헤어라인(Hairline) 기반 미디어 생성 엔진
- * - 한글 폰트(Pretendard/NanumGothic) Base64 내장으로 Linux/Render 환경 한글 깨짐(Tofu) 100% 방지
+ * - opentype.js 기반 벡터 텍스트 렌더링: 한글 폰트를 SVG <path> 벡터로 직접 변환
+ * - 시스템 폰트 / fontconfig / librsvg 의존성 0% -> Render Linux 배포 환경에서도 100% 한글 깨짐 방지
  * - Colors.white (#FFFFFF) 배경 기반 노이즈 제거
  * - Pure Black (#000000) 고대비 타이포그래피 (Heavy Header, 음수 자간)
  * - 0.5pt 미세 헤어라인 테두리 (#E5E7EB) 및 여백 활용
@@ -18,215 +20,289 @@ class MediaGenerator {
             fs.mkdirSync(this.outputBaseDir, { recursive: true });
         }
 
-        // 한글 폰트 Base64 메모리 캐싱 (Linux 서버 글자 깨짐 방지)
-        this.fontDefs = this._loadFontDefs();
+        // NanumGothic-Bold 폰트 메모리 로딩
+        this.font = this._loadFont();
     }
 
-    _loadFontDefs() {
+    _loadFont() {
         try {
             const fontPath = path.join(__dirname, '../fonts/NanumGothic-Bold.ttf');
             if (fs.existsSync(fontPath)) {
-                const base64 = fs.readFileSync(fontPath).toString('base64');
-                return `
-                <style>
-                    @font-face {
-                        font-family: 'KoreanFont';
-                        font-weight: 700 900;
-                        src: url('data:font/truetype;charset=utf-8;base64,${base64}') format('truetype');
-                    }
-                    text, tspan {
-                        font-family: 'KoreanFont', 'Pretendard', 'NanumGothic', 'Noto Sans KR', sans-serif !important;
-                    }
-                </style>
-                `;
+                const buffer = fs.readFileSync(fontPath);
+                const font = opentype.parse(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+                console.log('[MediaGenerator] ✅ opentype.js 한글 폰트 로딩 완료: NanumGothic-Bold.ttf');
+                return font;
             }
         } catch (e) {
-            console.warn('[MediaGenerator] Font embed warning:', e.message);
+            console.error('[MediaGenerator] ❌ 폰트 로드 실패:', e.message);
         }
-        return `
-        <style>
-            text, tspan {
-                font-family: 'Pretendard', 'NanumGothic', 'Noto Sans KR', sans-serif !important;
-            }
-        </style>
-        `;
-    }
-
-    _escapeXml(unsafe) {
-        if (!unsafe) return '';
-        return String(unsafe)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&apos;');
+        return null;
     }
 
     /**
-     * 무채색 카드뉴스 슬라이드(1080x1080) SVG 템플릿
+     * opentype.js를 이용해 텍스트를 SVG <path> 벡터로 렌더링
+     */
+    _renderText(text, x, y, fontSize, { align = 'left', fill = '#000000', opacity = 1 } = {}) {
+        if (!text || !this.font) return '';
+        const cleanText = String(text);
+        let targetX = x;
+
+        if (align === 'center') {
+            const width = this.font.getAdvanceWidth(cleanText, fontSize);
+            targetX = x - (width / 2);
+        } else if (align === 'right') {
+            const width = this.font.getAdvanceWidth(cleanText, fontSize);
+            targetX = x - width;
+        }
+
+        const p = this.font.getPath(cleanText, targetX, y, fontSize);
+        p.fill = fill;
+        const svgPath = p.toSVG();
+        if (opacity < 1) {
+            return `<g opacity="${opacity}">${svgPath}</g>`;
+        }
+        return svgPath;
+    }
+
+    /**
+     * 텍스트를 maxWidth에 맞춰 줄바꿈
+     */
+    _wrapText(text, maxWidth, fontSize) {
+        if (!text) return [];
+        if (!this.font) return [String(text)];
+
+        const cleanText = String(text);
+        const chars = cleanText.split('');
+        const lines = [];
+        let curLine = '';
+
+        for (const c of chars) {
+            if (c === '\n') {
+                lines.push(curLine);
+                curLine = '';
+                continue;
+            }
+            const testLine = curLine + c;
+            const w = this.font.getAdvanceWidth(testLine, fontSize);
+            if (w > maxWidth && curLine.length > 0) {
+                lines.push(curLine);
+                curLine = c;
+            } else {
+                curLine = testLine;
+            }
+        }
+        if (curLine) lines.push(curLine);
+        return lines;
+    }
+
+    /**
+     * 카드뉴스 슬라이드(1080x1080) SVG 템플릿
      */
     _createCardSlideSvg({ slideNumber, totalSlides, badge, title, desc, optionA, optionB, isCover, isOutro }) {
-        const escapedBadge = this._escapeXml(badge || 'UNIMEET');
-        const escapedDesc = this._escapeXml(desc || '');
-        const escapedA = this._escapeXml(optionA || '');
-        const escapedB = this._escapeXml(optionB || '');
+        let textPaths = '';
 
-        const titleLines = (title || '').split('\n').map(l => this._escapeXml(l.trim())).filter(Boolean);
-        const titleTspans = titleLines.map((line, idx) => 
-            `<tspan x="100" dy="${idx === 0 ? 0 : 80}">${line}</tspan>`
-        ).join('');
-
-        // 1. 표지 (Cover) - 절제된 에디토리얼 매거진 스타일
+        // 1. 표지 (Cover)
         if (isCover) {
+            // UNIMEET 워드마크
+            textPaths += this._renderText('UNIMEET', 100, 135, 34, { fill: '#000000' });
+
+            // 배지 (우상단 알약 배지 텍스트)
+            textPaths += this._renderText(badge || 'UNIMEET', 905, 126, 16, { align: 'center', fill: '#FFFFFF' });
+
+            // 메인 타이틀 (Heavy Header)
+            const titleLines = (title || '').split('\n').map(l => l.trim()).filter(Boolean);
+            let ty = 340;
+            for (const line of titleLines) {
+                textPaths += this._renderText(line, 100, ty, 68, { fill: '#000000' });
+                ty += 85;
+            }
+
+            // 서브 설명
+            if (desc) {
+                const descLines = this._wrapText(desc, 880, 28);
+                let dy = ty + 30;
+                for (const dline of descLines) {
+                    textPaths += this._renderText(dline, 100, dy, 28, { fill: '#6B7280' });
+                    dy += 40;
+                }
+            }
+
+            // 선택지 A 카드
+            textPaths += this._renderText('A', 150, 663, 20, { align: 'center', fill: '#FFFFFF' });
+            const aLines = this._wrapText(optionA || '', 350, 24);
+            let ay = 740;
+            for (const line of aLines) {
+                textPaths += this._renderText(line, 140, ay, 24, { fill: '#111827' });
+                ay += 34;
+            }
+
+            // VS 배지
+            textPaths += this._renderText('VS', 540, 722, 18, { align: 'center', fill: '#000000' });
+
+            // 선택지 B 카드
+            textPaths += this._renderText('B', 620, 663, 20, { align: 'center', fill: '#FFFFFF' });
+            const bLines = this._wrapText(optionB || '', 350, 24);
+            let by = 740;
+            for (const line of bLines) {
+                textPaths += this._renderText(line, 610, by, 24, { fill: '#111827' });
+                by += 34;
+            }
+
+            // 하단 푸터
+            textPaths += this._renderText('SWIPE TO CHOOSE', 100, 960, 20, { fill: '#000000' });
+            textPaths += this._renderText(`01 / ${String(totalSlides).padStart(2, '0')}`, 980, 960, 20, { align: 'right', fill: '#9CA3AF' });
+
             return `
             <svg width="1080" height="1080" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    ${this.fontDefs}
-                </defs>
-
-                <!-- 1. 배경: Pure White -->
+                <!-- 배경 -->
                 <rect width="1080" height="1080" fill="#FFFFFF" />
 
                 <!-- 0.5pt 헤어라인 내부 프레임 -->
                 <rect x="40" y="40" width="1000" height="1000" fill="none" stroke="#E5E7EB" stroke-width="1.5" />
 
-                <!-- 상단 헤더: 브랜드 워드마크 & 볼드 원형 배지 -->
-                <text x="100" y="130" font-size="32" font-weight="900" letter-spacing="-1.5" fill="#000000">UNIMEET</text>
-                
+                <!-- 상단 우측 배지 배경 -->
                 <rect x="830" y="100" width="150" height="40" rx="20" fill="#000000"/>
-                <text x="905" y="126" font-size="16" font-weight="700" fill="#FFFFFF" text-anchor="middle">${escapedBadge}</text>
 
-                <!-- 헤어라인 구분선 (0.5pt) -->
+                <!-- 헤어라인 구분선 -->
                 <line x1="100" y1="180" x2="980" y2="180" stroke="#F3F4F6" stroke-width="1.5" />
 
-                <!-- Heavy Header 메인 타이틀 (FontWeight 900, 자간 -2.5) -->
-                <text x="100" y="340" font-size="70" font-weight="900" letter-spacing="-2.5" fill="#000000">
-                    ${titleTspans}
-                </text>
+                <!-- 선택지 A 박스 -->
+                <rect x="100" y="600" width="410" height="230" rx="16" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1.5"/>
+                <circle cx="150" cy="655" r="20" fill="#000000"/>
 
-                <!-- 서브 설명 (Caption Style: 차분한 그레이) -->
-                <text x="100" y="520" font-size="28" font-weight="500" fill="#6B7280" letter-spacing="-0.5">
-                    ${escapedDesc}
-                </text>
+                <!-- 중앙 VS 원 -->
+                <circle cx="540" cy="715" r="28" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
 
-                <!-- 선택지 A vs B 미니멀 카드 박스 -->
-                <g>
-                    <!-- A 박스 -->
-                    <rect x="100" y="600" width="410" height="230" rx="16" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1.5"/>
-                    <circle cx="150" cy="655" r="20" fill="#000000"/>
-                    <text x="150" y="662" font-size="18" font-weight="900" fill="#FFFFFF" text-anchor="middle">A</text>
-                    <text x="150" y="740" font-size="26" font-weight="800" fill="#111827">${escapedA}</text>
+                <!-- 선택지 B 박스 -->
+                <rect x="570" y="600" width="410" height="230" rx="16" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1.5"/>
+                <circle cx="620" cy="655" r="20" fill="#000000"/>
 
-                    <!-- 중앙 VS 배지 -->
-                    <circle cx="540" cy="715" r="28" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
-                    <text x="540" y="723" font-size="18" font-weight="900" fill="#000000" text-anchor="middle">VS</text>
-
-                    <!-- B 박스 -->
-                    <rect x="570" y="600" width="410" height="230" rx="16" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1.5"/>
-                    <circle cx="620" cy="655" r="20" fill="#000000"/>
-                    <text x="620" y="662" font-size="18" font-weight="900" fill="#FFFFFF" text-anchor="middle">B</text>
-                    <text x="620" y="740" font-size="26" font-weight="800" fill="#111827">${escapedB}</text>
-                </g>
-
-                <!-- 하단 에디토리얼 푸터 -->
+                <!-- 하단 구분선 -->
                 <line x1="100" y1="910" x2="980" y2="910" stroke="#F3F4F6" stroke-width="1.5" />
-                <text x="100" y="960" font-size="20" font-weight="700" fill="#000000">SWIPE TO CHOOSE</text>
-                <text x="980" y="960" font-size="20" font-weight="500" fill="#9CA3AF" text-anchor="end">01 / 05</text>
+
+                <!-- 모든 텍스트 벡터 패스 -->
+                ${textPaths}
             </svg>
             `;
         }
 
-        // 2. 아웃트로 (Outro) - 유니밋 앱 다운로드 CTA
+        // 2. 아웃트로 (Outro)
         if (isOutro) {
+            textPaths += this._renderText('UNIMEET', 100, 135, 34, { fill: '#000000' });
+            textPaths += this._renderText(`${slideNumber} / ${totalSlides}`, 980, 130, 20, { align: 'right', fill: '#9CA3AF' });
+            textPaths += this._renderText('U', 540, 358, 44, { align: 'center', fill: '#FFFFFF' });
+
+            const cleanTitle = (title || '').replace(/\n/g, ' ');
+            const titleLines = this._wrapText(cleanTitle, 800, 52);
+            let ty = 480;
+            for (const line of titleLines) {
+                textPaths += this._renderText(line, 540, ty, 52, { align: 'center', fill: '#000000' });
+                ty += 65;
+            }
+
+            const descLines = this._wrapText(desc || '', 800, 26);
+            let dy = ty + 25;
+            for (const line of descLines) {
+                textPaths += this._renderText(line, 540, dy, 26, { align: 'center', fill: '#6B7280' });
+                dy += 38;
+            }
+
+            textPaths += this._renderText('지금 유니밋 다운로드하기', 540, 720, 28, { align: 'center', fill: '#FFFFFF' });
+            textPaths += this._renderText('프로필 링크 @unimeet.official', 540, 820, 22, { align: 'center', fill: '#9CA3AF' });
+            textPaths += this._renderText('UniMeet · Campus Match & Social', 540, 960, 20, { align: 'center', fill: '#9CA3AF' });
+
             return `
             <svg width="1080" height="1080" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    ${this.fontDefs}
-                </defs>
                 <rect width="1080" height="1080" fill="#FFFFFF" />
                 <rect x="40" y="40" width="1000" height="1000" fill="none" stroke="#E5E7EB" stroke-width="1.5" />
-
-                <!-- 상단 헤더 -->
-                <text x="100" y="130" font-size="32" font-weight="900" letter-spacing="-1.5" fill="#000000">UNIMEET</text>
-                <text x="980" y="130" font-size="20" font-weight="600" fill="#9CA3AF" text-anchor="end">${slideNumber} / ${totalSlides}</text>
                 <line x1="100" y1="180" x2="980" y2="180" stroke="#F3F4F6" stroke-width="1.5" />
 
-                <!-- 미니멀 서클 아이콘 -->
+                <!-- 중앙 아이콘 원 -->
                 <circle cx="540" cy="340" r="60" fill="#000000" />
-                <text x="540" y="358" font-size="44" font-weight="900" fill="#FFFFFF" text-anchor="middle">U</text>
 
-                <!-- Heavy Header -->
-                <text x="540" y="480" font-size="56" font-weight="900" letter-spacing="-2" fill="#000000" text-anchor="middle">
-                    ${this._escapeXml((title || '').replace(/\n/g, ' '))}
-                </text>
+                <!-- CTA 버튼 -->
+                <rect x="240" y="660" width="600" height="96" rx="48" fill="#000000" />
 
-                <!-- 서브 설명 -->
-                <text x="540" y="560" font-size="28" font-weight="500" fill="#6B7280" text-anchor="middle">
-                    ${escapedDesc}
-                </text>
-
-                <!-- Pure Black CTA 버튼 -->
-                <g>
-                    <rect x="240" y="660" width="600" height="96" rx="48" fill="#000000" />
-                    <text x="540" y="720" font-size="30" font-weight="800" fill="#FFFFFF" text-anchor="middle">지금 유니밋 다운로드하기</text>
-                </g>
-
-                <text x="540" y="820" font-size="22" font-weight="600" fill="#9CA3AF" text-anchor="middle">프로필 링크 @unimeet.official</text>
-
-                <!-- 하단 브랜드 라인 -->
+                <!-- 하단 구분선 -->
                 <line x1="100" y1="910" x2="980" y2="910" stroke="#F3F4F6" stroke-width="1.5" />
-                <text x="540" y="960" font-size="20" font-weight="600" fill="#9CA3AF" text-anchor="middle">UniMeet • Campus Match &amp; Social</text>
+
+                ${textPaths}
             </svg>
             `;
         }
 
-        // 3. 질문 슬라이드 (Q1, Q2, Q3) - 0.5pt 헤어라인 & 고대비 선택지 카드
+        // 3. 질문 슬라이드 (Q1, Q2, Q3)
+        textPaths += this._renderText('UNIMEET', 100, 135, 34, { fill: '#000000' });
+        textPaths += this._renderText(badge || '', 855, 125, 16, { align: 'center', fill: '#FFFFFF' });
+        textPaths += this._renderText(`${slideNumber} / ${totalSlides}`, 980, 128, 20, { align: 'right', fill: '#9CA3AF' });
+
+        // 메인 질문 헤드라인
+        const titleLines = (title || '').split('\n').map(l => l.trim()).filter(Boolean);
+        let ty = 270;
+        for (const line of titleLines) {
+            textPaths += this._renderText(line, 100, ty, 52, { fill: '#000000' });
+            ty += 68;
+        }
+
+        // 서브 설명
+        if (desc) {
+            const descLines = this._wrapText(desc, 850, 26);
+            let dy = ty + 15;
+            for (const dline of descLines) {
+                textPaths += this._renderText(dline, 100, dy, 26, { fill: '#6B7280' });
+                dy += 36;
+            }
+        }
+
+        // 선택지 A 카드
+        textPaths += this._renderText('A', 170, 545, 30, { align: 'center', fill: '#FFFFFF' });
+        const aLines = this._wrapText(optionA || '', 680, 30);
+        let aY = 535;
+        for (const line of aLines) {
+            textPaths += this._renderText(line, 235, aY, 30, { fill: '#111827' });
+            aY += 40;
+        }
+
+        // VS 원
+        textPaths += this._renderText('VS', 540, 680, 18, { align: 'center', fill: '#000000' });
+
+        // 선택지 B 카드
+        textPaths += this._renderText('B', 170, 775, 30, { align: 'center', fill: '#FFFFFF' });
+        const bLines = this._wrapText(optionB || '', 680, 30);
+        let bY = 765;
+        for (const line of bLines) {
+            textPaths += this._renderText(line, 235, bY, 30, { fill: '#111827' });
+            bY += 40;
+        }
+
+        // 하단 라인
+        textPaths += this._renderText('COMMENT YOUR CHOICE [A vs B]', 100, 960, 20, { fill: '#000000' });
+        textPaths += this._renderText('UNIMEET', 980, 960, 20, { align: 'right', fill: '#9CA3AF' });
+
         return `
         <svg width="1080" height="1080" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                ${this.fontDefs}
-            </defs>
             <rect width="1080" height="1080" fill="#FFFFFF" />
             <rect x="40" y="40" width="1000" height="1000" fill="none" stroke="#E5E7EB" stroke-width="1.5" />
 
-            <!-- 상단 헤더 -->
-            <text x="100" y="130" font-size="32" font-weight="900" letter-spacing="-1.5" fill="#000000">UNIMEET</text>
-            
+            <!-- 상단 배지 -->
             <rect x="800" y="100" width="110" height="38" rx="19" fill="#000000"/>
-            <text x="855" y="125" font-size="16" font-weight="700" fill="#FFFFFF" text-anchor="middle">${escapedBadge}</text>
-
-            <text x="980" y="127" font-size="20" font-weight="600" fill="#9CA3AF" text-anchor="end">${slideNumber} / ${totalSlides}</text>
             <line x1="100" y1="170" x2="980" y2="170" stroke="#F3F4F6" stroke-width="1.5" />
 
-            <!-- 메인 질문 Heavy Header -->
-            <text x="100" y="270" font-size="56" font-weight="900" letter-spacing="-2" fill="#000000">
-                ${titleTspans}
-            </text>
+            <!-- 선택지 A 카드 -->
+            <rect x="100" y="440" width="880" height="190" rx="20" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1.5"/>
+            <circle cx="170" cy="535" r="32" fill="#000000" />
 
-            <text x="100" y="380" font-size="26" font-weight="500" fill="#6B7280">
-                ${escapedDesc}
-            </text>
+            <!-- VS 배지 -->
+            <circle cx="540" cy="672" r="26" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
 
-            <!-- 선택지 A 카드 (헤어라인 테두리 + Pure Black 원형 배지) -->
-            <g>
-                <rect x="100" y="440" width="880" height="190" rx="20" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1.5"/>
-                <circle cx="170" cy="535" r="32" fill="#000000" />
-                <text x="170" y="547" font-size="30" font-weight="900" fill="#FFFFFF" text-anchor="middle">A</text>
-                <text x="235" y="545" font-size="32" font-weight="800" fill="#111827" letter-spacing="-1">${escapedA}</text>
-            </g>
+            <!-- 선택지 B 카드 -->
+            <rect x="100" y="670" width="880" height="190" rx="20" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1.5"/>
+            <circle cx="170" cy="765" r="32" fill="#000000" />
 
-            <!-- 선택지 B 카드 (헤어라인 테두리 + Pure Black 원형 배지) -->
-            <g>
-                <rect x="100" y="670" width="880" height="190" rx="20" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1.5"/>
-                <circle cx="170" cy="765" r="32" fill="#000000" />
-                <text x="170" y="777" font-size="30" font-weight="900" fill="#FFFFFF" text-anchor="middle">B</text>
-                <text x="235" y="775" font-size="32" font-weight="800" fill="#111827" letter-spacing="-1">${escapedB}</text>
-            </g>
-
-            <!-- 하단 안내 라인 -->
+            <!-- 하단 구분선 -->
             <line x1="100" y1="910" x2="980" y2="910" stroke="#F3F4F6" stroke-width="1.5" />
-            <text x="100" y="960" font-size="20" font-weight="700" fill="#000000">COMMENT YOUR CHOICE [A vs B]</text>
-            <text x="980" y="960" font-size="20" font-weight="500" fill="#9CA3AF" text-anchor="end">UNIMEET</text>
+
+            ${textPaths}
         </svg>
         `;
     }
@@ -235,66 +311,95 @@ class MediaGenerator {
      * 무채색 숏폼 영상 씬(1080x1920) SVG 템플릿
      */
     _createVideoSceneSvg({ sceneNumber, totalScenes, durationSec, title, subtitle, narration, visualDescription, optionA, optionB }) {
-        const escapedTitle = this._escapeXml(title || '');
-        const escapedSubtitle = this._escapeXml(subtitle || '');
-        const escapedNarration = this._escapeXml(narration || '');
-        const escapedA = this._escapeXml(optionA || '');
-        const escapedB = this._escapeXml(optionB || '');
+        let textPaths = '';
+
+        // 상단 바
+        textPaths += this._renderText('UNIMEET', 100, 160, 36, { fill: '#000000' });
+        textPaths += this._renderText(`SCENE ${sceneNumber}/${totalScenes} · ${durationSec}S`, 865, 157, 18, { align: 'center', fill: '#FFFFFF' });
+
+        // 중앙 타이틀
+        const titleLines = this._wrapText(title || '', 850, 56);
+        let ty = 380;
+        for (const line of titleLines) {
+            textPaths += this._renderText(line, 540, ty, 56, { align: 'center', fill: '#000000' });
+            ty += 70;
+        }
+
+        // 인스타그램 스토리 자막 바
+        const subLines = this._wrapText(subtitle || '', 820, 36);
+        let sy = 545;
+        for (const line of subLines) {
+            textPaths += this._renderText(line, 540, sy, 36, { align: 'center', fill: '#FFFFFF' });
+            sy += 48;
+        }
+
+        // A 카드
+        textPaths += this._renderText('A', 170, 773, 30, { align: 'center', fill: '#FFFFFF' });
+        const aLines = this._wrapText(optionA || '', 720, 32);
+        let aY = 770;
+        for (const line of aLines) {
+            textPaths += this._renderText(line, 235, aY, 32, { fill: '#111827' });
+            aY += 44;
+        }
+
+        // VS 원
+        textPaths += this._renderText('VS', 540, 992, 24, { align: 'center', fill: '#000000' });
+
+        // B 카드
+        textPaths += this._renderText('B', 170, 1123, 30, { align: 'center', fill: '#FFFFFF' });
+        const bLines = this._wrapText(optionB || '', 720, 32);
+        let bY = 1120;
+        for (const line of bLines) {
+            textPaths += this._renderText(line, 235, bY, 32, { fill: '#111827' });
+            bY += 44;
+        }
+
+        // 나레이션 스크립트 오버레이
+        textPaths += this._renderText('VOICEOVER SCRIPT', 140, 1440, 20, { fill: '#000000' });
+        const narLines = this._wrapText(`"${narration || ''}"`, 820, 24);
+        let ny = 1490;
+        for (const line of narLines) {
+            textPaths += this._renderText(line, 140, ny, 24, { fill: '#374151' });
+            ny += 34;
+        }
+        const dirLines = this._wrapText(`DIRECTING: ${visualDescription || ''}`, 820, 18);
+        let diry = ny + 15;
+        for (const line of dirLines) {
+            textPaths += this._renderText(line, 140, diry, 18, { fill: '#9CA3AF' });
+            diry += 26;
+        }
+
+        // 푸터
+        textPaths += this._renderText('UNIMEET SHORTS & REELS', 540, 1790, 24, { align: 'center', fill: '#000000' });
 
         return `
         <svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                ${this.fontDefs}
-            </defs>
             <rect width="1080" height="1920" fill="#FFFFFF" />
             <rect x="50" y="50" width="980" height="1820" fill="none" stroke="#E5E7EB" stroke-width="1.5" />
 
-            <!-- 상단 바: 브랜드 & 씬 정보 원형 배지 -->
-            <text x="100" y="160" font-size="36" font-weight="900" letter-spacing="-1.5" fill="#000000">UNIMEET</text>
-            
+            <!-- 상단 바 배지 -->
             <rect x="750" y="125" width="230" height="48" rx="24" fill="#000000"/>
-            <text x="865" y="157" font-size="18" font-weight="800" fill="#FFFFFF" text-anchor="middle">SCENE ${sceneNumber}/${totalScenes} • ${durationSec}S</text>
-
             <line x1="100" y1="210" x2="980" y2="210" stroke="#F3F4F6" stroke-width="1.5" />
 
-            <!-- 중앙 타이틀 (Heavy Header) -->
-            <text x="540" y="380" font-size="62" font-weight="900" letter-spacing="-2.5" fill="#000000" text-anchor="middle">
-                ${escapedTitle}
-            </text>
+            <!-- 자막 바 (Pure Black) -->
+            <rect x="90" y="470" width="900" height="140" rx="24" fill="#000000" />
 
-            <!-- 인스타그램 스토리 자막 바 (Pure Black 바탕 화이트 텍스트) -->
-            <g>
-                <rect x="90" y="470" width="900" height="140" rx="24" fill="#000000" />
-                <text x="540" y="555" font-size="40" font-weight="800" fill="#FFFFFF" text-anchor="middle" letter-spacing="-1">
-                    ${escapedSubtitle}
-                </text>
-            </g>
+            <!-- A 선택지 박스 -->
+            <rect x="90" y="680" width="900" height="250" rx="28" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="2"/>
+            <circle cx="170" cy="760" r="34" fill="#000000" />
 
-            <!-- A vs B 선택지 박스 (무채색 헤어라인 카드) -->
-            <g>
-                <rect x="90" y="680" width="900" height="250" rx="28" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="2"/>
-                <circle cx="170" cy="760" r="34" fill="#000000" />
-                <text x="170" y="773" font-size="30" font-weight="900" fill="#FFFFFF" text-anchor="middle">A</text>
-                <text x="235" y="770" font-size="34" font-weight="800" fill="#111827" letter-spacing="-1">${escapedA}</text>
+            <!-- VS 배지 -->
+            <circle cx="540" cy="980" r="40" fill="#FFFFFF" stroke="#000000" stroke-width="3"/>
 
-                <circle cx="540" cy="980" r="40" fill="#FFFFFF" stroke="#000000" stroke-width="3"/>
-                <text x="540" y="992" font-size="24" font-weight="900" fill="#000000" text-anchor="middle">VS</text>
+            <!-- B 선택지 박스 -->
+            <rect x="90" y="1030" width="900" height="250" rx="28" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="2"/>
+            <circle cx="170" cy="1110" r="34" fill="#000000" />
 
-                <rect x="90" y="1030" width="900" height="250" rx="28" fill="#FAFAFA" stroke="#E5E7EB" stroke-width="2"/>
-                <circle cx="170" cy="1110" r="34" fill="#000000" />
-                <text x="170" y="1123" font-size="30" font-weight="900" fill="#FFFFFF" text-anchor="middle">B</text>
-                <text x="235" y="1120" font-size="34" font-weight="800" fill="#111827" letter-spacing="-1">${escapedB}</text>
-            </g>
-
-            <!-- 하단 나레이션 스크립트 오버레이 (0.5pt 헤어라인 박스) -->
+            <!-- 나레이션 오버레이 박스 -->
             <rect x="90" y="1380" width="900" height="260" rx="24" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5"/>
-            <text x="140" y="1440" font-size="20" font-weight="800" fill="#000000">VOICEOVER SCRIPT</text>
-            <text x="140" y="1500" font-size="26" font-weight="500" fill="#374151">"${escapedNarration}"</text>
-            <text x="140" y="1580" font-size="20" font-weight="500" fill="#9CA3AF">DIRECTING: ${this._escapeXml(visualDescription || '')}</text>
-
-            <!-- 푸터 워터마크 -->
             <line x1="90" y1="1720" x2="990" y2="1720" stroke="#F3F4F6" stroke-width="1.5" />
-            <text x="540" y="1790" font-size="24" font-weight="800" fill="#000000" text-anchor="middle">UNIMEET SHORTS &amp; REELS</text>
+
+            ${textPaths}
         </svg>
         `;
     }
