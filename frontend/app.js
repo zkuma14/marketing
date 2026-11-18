@@ -4,7 +4,8 @@
  */
 
 // 백엔드 API 호스트 자동 감지 (Render 상용 배포 및 로컬 대응)
-const isLocalSeparateDev = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '5500';
+const isBackendDirect = window.location.port === '3000';
+const isLocalSeparateDev = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:') && !isBackendDirect;
 const API_BASE = isLocalSeparateDev ? 'http://localhost:3000/api' : '/api';
 const ASSET_BASE = isLocalSeparateDev ? 'http://localhost:3000' : '';
 
@@ -19,18 +20,27 @@ function onFormatChange(type) {
     currentContentType = type;
     const labelPost = document.getElementById('labelPost');
     const labelVideo = document.getElementById('labelVideo');
+    const canvas = document.getElementById('instagramCanvas');
+    const imgEl = document.getElementById('renderedSlideImg');
 
     if (type === 'post') {
         labelPost.classList.add('active');
         labelVideo.classList.remove('active');
-        document.getElementById('instagramCanvas').classList.remove('aspect-video');
-        document.getElementById('instagramCanvas').classList.add('aspect-square');
+        canvas.classList.remove('aspect-video');
+        canvas.classList.add('aspect-square');
+        canvas.style.height = '';
+        if (imgEl) {
+            imgEl.className = imgEl.classList.contains('hidden') ? 'hidden w-full h-full object-cover' : 'w-full h-full object-cover';
+        }
     } else {
         labelVideo.classList.add('active');
         labelPost.classList.remove('active');
-        // 9:16 느낌의 세로 비율 유지
-        document.getElementById('instagramCanvas').classList.remove('aspect-square');
-        document.getElementById('instagramCanvas').style.height = '420px';
+        // 9:16 쇼츠 비율 온전히 표시 (위아래 잘림 방지)
+        canvas.classList.remove('aspect-square');
+        canvas.style.height = '520px';
+        if (imgEl) {
+            imgEl.className = imgEl.classList.contains('hidden') ? 'hidden w-full h-full object-contain bg-neutral-900' : 'w-full h-full object-contain bg-neutral-900';
+        }
     }
 }
 
@@ -245,6 +255,12 @@ function renderInstagramMockup() {
     document.getElementById('canvasPlaceholder').classList.add('hidden');
     const imgEl = document.getElementById('renderedSlideImg');
     imgEl.classList.remove('hidden');
+
+    if (currentContentType === 'video') {
+        imgEl.className = 'w-full h-full object-contain bg-neutral-900';
+    } else {
+        imgEl.className = 'w-full h-full object-cover';
+    }
 
     updateCurrentSlide();
 

@@ -20,17 +20,20 @@ class MediaGenerator {
             fs.mkdirSync(this.outputBaseDir, { recursive: true });
         }
 
-        // NanumGothic-Bold 폰트 메모리 로딩
+        // 한글 폰트 메모리 로딩 (Pretendard-Bold 우선, NanumGothic-Bold 폴백)
         this.font = this._loadFont();
     }
 
     _loadFont() {
         try {
-            const fontPath = path.join(__dirname, '../fonts/NanumGothic-Bold.ttf');
-            if (fs.existsSync(fontPath)) {
-                const buffer = fs.readFileSync(fontPath);
+            const pretendardPath = path.join(__dirname, '../fonts/Pretendard-Bold.otf');
+            const nanumPath = path.join(__dirname, '../fonts/NanumGothic-Bold.ttf');
+            const targetPath = fs.existsSync(pretendardPath) ? pretendardPath : nanumPath;
+
+            if (fs.existsSync(targetPath)) {
+                const buffer = fs.readFileSync(targetPath);
                 const font = opentype.parse(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
-                console.log('[MediaGenerator] ✅ opentype.js 한글 폰트 로딩 완료: NanumGothic-Bold.ttf');
+                console.log(`[MediaGenerator] ✅ opentype.js 한글 폰트 로딩 완료: ${path.basename(targetPath)}`);
                 return font;
             }
         } catch (e) {
@@ -71,28 +74,29 @@ class MediaGenerator {
         if (!text) return [];
         if (!this.font) return [String(text)];
 
-        const cleanText = String(text);
-        const chars = cleanText.split('');
-        const lines = [];
-        let curLine = '';
+        const cleanText = String(text).replace(/\r\n/g, '\n');
+        const rawLines = cleanText.split('\n');
+        const resultLines = [];
 
-        for (const c of chars) {
-            if (c === '\n') {
-                lines.push(curLine);
-                curLine = '';
-                continue;
+        for (const rawLine of rawLines) {
+            if (!rawLine.trim()) continue;
+            const chars = rawLine.split('');
+            let curLine = '';
+            for (const c of chars) {
+                const testLine = curLine + c;
+                const w = this.font.getAdvanceWidth(testLine, fontSize);
+                if (w > maxWidth && curLine.length > 0) {
+                    resultLines.push(curLine.trim());
+                    curLine = c.trimStart();
+                } else {
+                    curLine = testLine;
+                }
             }
-            const testLine = curLine + c;
-            const w = this.font.getAdvanceWidth(testLine, fontSize);
-            if (w > maxWidth && curLine.length > 0) {
-                lines.push(curLine);
-                curLine = c;
-            } else {
-                curLine = testLine;
+            if (curLine.trim().length > 0) {
+                resultLines.push(curLine.trim());
             }
         }
-        if (curLine) lines.push(curLine);
-        return lines;
+        return resultLines;
     }
 
     /**
@@ -110,7 +114,11 @@ class MediaGenerator {
             textPaths += this._renderText(badge || 'UNIMEET', 905, 126, 16, { align: 'center', fill: '#FFFFFF' });
 
             // 메인 타이틀 (Heavy Header)
-            const titleLines = (title || '').split('\n').map(l => l.trim()).filter(Boolean);
+            const rawTitleLines = (title || '').split('\n').map(l => l.trim()).filter(Boolean);
+            const titleLines = [];
+            for (const rtl of rawTitleLines) {
+                titleLines.push(...this._wrapText(rtl, 880, 68));
+            }
             let ty = 340;
             for (const line of titleLines) {
                 textPaths += this._renderText(line, 100, ty, 68, { fill: '#000000' });
@@ -237,7 +245,11 @@ class MediaGenerator {
         textPaths += this._renderText(`${slideNumber} / ${totalSlides}`, 980, 128, 20, { align: 'right', fill: '#9CA3AF' });
 
         // 메인 질문 헤드라인
-        const titleLines = (title || '').split('\n').map(l => l.trim()).filter(Boolean);
+        const rawTitleLines = (title || '').split('\n').map(l => l.trim()).filter(Boolean);
+        const titleLines = [];
+        for (const rtl of rawTitleLines) {
+            titleLines.push(...this._wrapText(rtl, 850, 52));
+        }
         let ty = 270;
         for (const line of titleLines) {
             textPaths += this._renderText(line, 100, ty, 52, { fill: '#000000' });
