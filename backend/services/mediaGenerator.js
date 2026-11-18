@@ -60,7 +60,7 @@ class MediaGenerator {
 
         const p = this.font.getPath(cleanText, targetX, y, fontSize);
         p.fill = fill;
-        const svgPath = p.toSVG();
+        const svgPath = p.toSVG({ decimalPlaces: 2, flipY: false });
         if (opacity < 1) {
             return `<g opacity="${opacity}">${svgPath}</g>`;
         }
